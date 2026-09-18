@@ -1,0 +1,439 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LOCAL TV — Открытое Народное ТВ Вещание</title>
+  <meta name="description" content="Локальный ТВ канал для трансляций без защиты через RTMP и GitHub Pages.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Верхняя панель / Навбар -->
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="7" width="20" height="14" rx="3" ry="3"></rect>
+            <path d="M17 2l-5 5-5-5"></path>
+          </svg>
+        </div>
+        <div class="brand-info">
+          <h1>LOCAL TV</h1>
+          <span class="brand-tagline">Открытый RTMP эфир для друзей</span>
+        </div>
+      </div>
+
+      <div class="header-status">
+        <button class="btn-outline" onclick="openStreamSourceModal()" title="Настроить стрим-сервер (для GitHub Pages)">
+          ⚙️ Источник потока
+        </button>
+        <div id="status-badge" class="status-badge offline">
+          <span class="status-dot"></span>
+          <span id="status-text">ОЖИДАНИЕ СИГНАЛА</span>
+        </div>
+        <div class="viewer-count" title="Зрители онлайн">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+          <span id="viewer-count-num">1</span>
+        </div>
+        <div class="clock" id="live-clock">00:00:00</div>
+      </div>
+    </header>
+
+    <!-- Предупреждение о необходимости настройки стрим-сервера на GitHub Pages -->
+    <div id="gh-banner" class="github-banner hidden">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span style="font-size:1.5rem;">🌍</span>
+        <div>
+          <strong style="color:#fff;display:block;">Вещание через GitHub Pages</strong>
+          <span style="font-size:0.85rem;color:var(--text-secondary);">Укажите постоянный HTTPS-адрес вашего домашнего стрим-сервера для воспроизведения.</span>
+        </div>
+      </div>
+      <button class="btn btn-sm btn-primary" onclick="openStreamSourceModal()">Подключить стрим-сервер</button>
+    </div>
+
+    <!-- Предупреждение о необходимости ngrok токена (если используется ngrok) -->
+    <div id="ngrok-banner" class="ngrok-banner hidden">
+      <div class="ngrok-banner-icon">⚡</div>
+      <div class="ngrok-banner-content">
+        <strong>Для вещания через интернет друзьям:</strong>
+        <span>Требуется бесплатный токен ngrok или Cloudflare Tunnel. Введите его в панели управления внизу.</span>
+      </div>
+      <button class="btn btn-sm btn-accent" onclick="switchTab('tab-ngrok')">Настроить токен</button>
+    </div>
+
+    <!-- Основная секция: Видеоплеер и Чат -->
+    <main class="main-content">
+      <div class="player-column">
+        <!-- Контейнер плеера -->
+        <div class="player-wrapper">
+          <video id="tv-player" playsinline webkit-playsinline x5-playsinline autoplay muted></video>
+
+          <!-- Кнопка большого старта воспроизведения -->
+          <div id="play-prompt-overlay" class="play-prompt-overlay hidden" onclick="handleStartPlayback()">
+            <div class="big-play-icon">
+              <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
+            </div>
+            <span class="prompt-text">ЭФИР ИДЕТ • НАЖМИТЕ ДЛЯ ПРОСМОТРА</span>
+          </div>
+
+          <!-- Оверлей при отсутствии сигнала -->
+          <div id="offline-screen" class="offline-screen">
+            <div class="tv-test-pattern">
+              <div class="test-bar bar-1"></div>
+              <div class="test-bar bar-2"></div>
+              <div class="test-bar bar-3"></div>
+              <div class="test-bar bar-4"></div>
+              <div class="test-bar bar-5"></div>
+              <div class="test-bar bar-6"></div>
+              <div class="test-bar bar-7"></div>
+            </div>
+            <div class="offline-content">
+              <div class="offline-radar"></div>
+              <h2 class="offline-title">НЕТ ВХОДЯЩЕГО СИГНАЛА</h2>
+              <p class="offline-desc">Ведущий еще не включил трансляцию. Канал ожидает поток на RTMP порту 1935.</p>
+              <div class="offline-tips">
+                <span class="tip-badge">OBS: rtmp://127.0.0.1:1935/live</span>
+                <span class="tip-badge">Ключ: LOCALTV</span>
+                <span class="tip-badge">Порт 1935 фиксирован</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Кастомная панель поверх видео -->
+          <div class="player-overlay-bar">
+            <div class="player-left-controls">
+              <button id="btn-play-toggle" class="icon-btn" title="Пауза / Старт">
+                <svg id="icon-play" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                <svg id="icon-pause" class="hidden" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+              </button>
+              <div class="volume-control">
+                <button id="btn-mute-toggle" class="icon-btn" title="Звук">
+                  <svg id="icon-vol-on" viewBox="0 0 24 24" fill="currentColor"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+                  <svg id="icon-vol-off" class="hidden" viewBox="0 0 24 24" fill="currentColor"><line x1="1" y1="1" x2="23" y2="23"></line><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+                </button>
+                <input type="range" id="volume-slider" min="0" max="1" step="0.05" value="0.8">
+              </div>
+              <button id="btn-live-sync" class="live-sync-btn active" title="Синхронизация с живым эфиром">
+                <span class="pulse-icon"></span> ЖИВОЙ ЭФИР ⚡
+              </button>
+            </div>
+
+            <div class="player-right-controls">
+              <span id="player-engine-badge" class="badge badge-engine">HLS 2.0s</span>
+              <button id="btn-fullscreen" class="icon-btn" title="Полный экран">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Слой всплывающих реакций -->
+          <div id="reactions-layer" class="reactions-layer"></div>
+        </div>
+
+        <!-- Быстрая панель реакций -->
+        <div class="reaction-bar">
+          <span class="reaction-label">Реакции:</span>
+          <button class="reaction-btn" onclick="sendReaction('🔥')">🔥</button>
+          <button class="reaction-btn" onclick="sendReaction('❤️')">❤️</button>
+          <button class="reaction-btn" onclick="sendReaction('👍')">👍</button>
+          <button class="reaction-btn" onclick="sendReaction('👏')">👏</button>
+          <button class="reaction-btn" onclick="sendReaction('😂')">😂</button>
+          <button class="reaction-btn" onclick="sendReaction('🎉')">🎉</button>
+          <button class="reaction-btn" onclick="sendReaction('🚀')">🚀</button>
+        </div>
+
+        <!-- Информационная плашка прямого потока для F12 DevTools -->
+        <div class="stream-inspector-card">
+          <div class="inspector-header">
+            <div class="inspector-title">
+              <span class="pulse-indicator"></span>
+              <strong>Видеопоток:</strong>
+              <span id="inspector-engine-tag" class="tag-flv" style="background:rgba(56, 189, 248, 0.15);border-color:#38bdf8;color:#38bdf8;">HLS (playlist.m3u8)</span>
+            </div>
+            <div class="engine-switch-group">
+              <button id="btn-engine-hls" class="btn-engine active" onclick="switchEngine('hls')" title="Потоковые HLS сегменты .ts">📼 HLS Сегменты (.ts)</button>
+              <button id="btn-engine-flv" class="btn-engine" onclick="switchEngine('flv')" title="Непрерывный FLV поток (локально)">⚡ FLV Прямой поток</button>
+            </div>
+          </div>
+          <div class="inspector-details">
+            <div class="inspector-item">
+              <span class="item-label">Текущий источник:</span>
+              <code id="current-source-display" class="code-url">Загрузка...</code>
+              <button class="btn-copy-mini" onclick="openStreamSourceModal()">Изменить</button>
+            </div>
+            <div class="inspector-item">
+              <span class="item-label">Прямой URL плейлиста:</span>
+              <code id="stream-direct-url" class="code-url">/playlist.m3u8</code>
+              <button class="btn-copy-mini" onclick="copyInputText('stream-direct-url')">Копировать</button>
+            </div>
+            <div class="inspector-metrics">
+              <div class="metric"><span class="m-label">Статус:</span> <strong id="inspector-network-live">Активен</strong></div>
+              <div class="metric"><span class="m-label">Битрейт:</span> <strong id="inspector-bitrate">0 kbps</strong></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Боковая панель (Чат) -->
+      <aside class="sidebar-column">
+        <div class="chat-card">
+          <div class="card-header">
+            <h3>Чат эфира</h3>
+            <span class="chat-status-dot"></span>
+          </div>
+          <div id="chat-messages" class="chat-messages"></div>
+          <form id="chat-form" class="chat-input-row" onsubmit="handleSendChat(event)">
+            <input type="text" id="chat-user-input" class="input-user" placeholder="Имя" value="Зритель" maxlength="15">
+            <input type="text" id="chat-text-input" class="input-text" placeholder="Написать сообщение..." maxlength="180" autocomplete="off" required>
+            <button type="submit" class="btn btn-primary btn-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+            </button>
+          </form>
+        </div>
+      </aside>
+    </main>
+
+    <!-- Нижний информационный центр с табами -->
+    <section class="info-section">
+      <div class="tabs-nav">
+        <button class="tab-btn active" onclick="switchTab('tab-broadcaster')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
+          Как запустить стрим (OBS)
+        </button>
+        <button class="tab-btn" onclick="switchTab('tab-github')" id="tab-btn-github">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+          Вещание на GitHub Pages
+        </button>
+        <button class="tab-btn" onclick="switchTab('tab-share')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+          Поделиться ссылками
+        </button>
+        <button class="tab-btn" onclick="switchTab('tab-ngrok')" id="tab-btn-ngrok">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+          Настройки туннеля (ngrok)
+        </button>
+      </div>
+
+      <!-- Вкладка: Для ведущего (OBS) -->
+      <div id="tab-broadcaster" class="tab-pane active">
+        <div class="obs-guide">
+          <div class="obs-steps">
+            <div class="obs-step">
+              <div class="step-num">1</div>
+              <div class="step-body">
+                <h4>Откройте OBS Studio или Streamlabs</h4>
+                <p>Перейдите в <strong>Файл &rarr; Настройки &rarr; Трансляция (Stream)</strong>.</p>
+              </div>
+            </div>
+
+            <div class="obs-step">
+              <div class="step-num">2</div>
+              <div class="step-body">
+                <h4>Укажите ФИКСИРОВАННЫЙ Сервер и Ключ потока</h4>
+                <div class="code-field" style="background: rgba(16, 185, 129, 0.15); padding: 14px; border-radius: 8px; border: 1px solid #10b981; margin-bottom: 12px;">
+                  <label style="color: #6ee7b7; font-weight: 700; font-size: 0.95rem;">🔒 СЕРВЕР В OBS ДЛЯ ЭТОГО ПК (ПОРТ 1935 НЕ МЕНЯЕТСЯ НИКОГДА):</label>
+                  <div class="copy-inline" style="margin-top: 6px;">
+                    <code id="obs-local-url" style="color: #fff; font-weight: 700; font-size: 1.15rem;">rtmp://127.0.0.1:1935/live</code>
+                    <button class="btn btn-xs btn-primary" onclick="copyInputText('obs-local-url')">Копировать</button>
+                  </div>
+                  <small style="color: #a7f3d0; display:block; margin-top: 4px;">✅ Вводите именно этот адрес! Он работает всегда, без интернета, без задержек и с постоянным портом 1935.</small>
+                </div>
+
+                <div class="code-field" style="background: rgba(99, 102, 241, 0.1); padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); margin-bottom: 12px;">
+                  <label style="color: #c7d2fe; font-weight: 600; font-size: 0.9rem;">🌐 Внешний RTMP (если стримит удаленный друг через интернет):</label>
+                  <div class="copy-inline" style="margin-top: 6px;">
+                    <code id="obs-bore-url" style="color: #fff; font-weight: 600;">rtmp://bore.pub:64897/live</code>
+                    <button class="btn btn-xs btn-secondary" onclick="copyInputText('obs-bore-url')">Копировать</button>
+                  </div>
+                </div>
+
+                <div class="code-field">
+                  <label>Ключ потока (Stream Key):</label>
+                  <div class="copy-inline">
+                    <code>LOCALTV</code>
+                    <button class="btn btn-xs btn-secondary" onclick="copyText('LOCALTV')">Копировать</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="obs-step">
+              <div class="step-num">3</div>
+              <div class="step-body">
+                <h4>Аутентификация</h4>
+                <p class="highlight-text">Галочку <strong>«Использовать проверку подлинности» ставить НЕ нужно</strong> (защита отключена).</p>
+              </div>
+            </div>
+
+            <div class="obs-step">
+              <div class="step-num">4</div>
+              <div class="step-body">
+                <h4>Нажмите «Начать трансляцию»</h4>
+                <p>Трансляция мгновенно пойдет в эфир и появится у всех зрителей на локальном сайте и на GitHub Pages!</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="obs-sidebar-card">
+            <h4>💡 Рекомендуемые настройки OBS</h4>
+            <ul>
+              <li><strong>Кодировщик:</strong> x264 или NVIDIA NVENC</li>
+              <li><strong>Битрейт:</strong> 2500 - 4500 Kbps</li>
+              <li><strong>Интервал ключевых кадров:</strong> 1 или 2 сек (важно для HLS)</li>
+              <li><strong>Разрешение:</strong> 1280x720 или 1920x1080</li>
+              <li><strong>FPS:</strong> 30 или 60</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Вкладка: Вещание на GitHub Pages -->
+      <div id="tab-github" class="tab-pane">
+        <div class="links-grid">
+          <div class="link-card highlight">
+            <div class="link-card-header">
+              <span class="badge badge-accent">GitHub Pages ссылка для зрителей</span>
+              <h4>Готовая ссылка на трансляцию</h4>
+            </div>
+            <p class="link-desc">Эту ссылку можно отправить зрителям. Она автоматически подключает плеер на GitHub к вашему стрим-серверу:</p>
+            <div class="link-copy-box">
+              <input type="text" id="share-gh-pages-url" readonly value="Загрузка ссылки...">
+              <button class="btn btn-primary" onclick="copyInput('share-gh-pages-url')">Копировать</button>
+            </div>
+          </div>
+
+          <div class="link-card">
+            <div class="link-card-header">
+              <span class="badge">Быстрый старт</span>
+              <h4>Как работает GitHub Pages + LocalTV</h4>
+            </div>
+            <p class="link-desc" style="font-size:0.88rem;line-height:1.6;">
+              1. Страница плеера размещается бесплатно на <code>https://&lt;ваш_ник&gt;.github.io/&lt;репо&gt;/</code>.<br>
+              2. Видеопоток идет с вашего компьютера через защищенный HTTPS-туннель (ngrok или Cloudflare).<br>
+              3. В плеере на GitHub Pages плеер берет адрес из <code>config.js</code> или из параметра ссылки <code>?stream=...</code>.
+            </p>
+            <button class="btn btn-secondary" onclick="openStreamSourceModal()">⚙️ Настроить адрес стрима</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Вкладка: Поделиться -->
+      <div id="tab-share" class="tab-pane">
+        <div class="links-grid">
+          <div class="link-card highlight">
+            <div class="link-card-header">
+              <span class="badge badge-accent">Локальный плеер</span>
+              <h4>Веб-плеер (Порт 8000)</h4>
+            </div>
+            <p class="link-desc">Для просмотра на этом компьютере или устройствах в домашней Wi-Fi сети:</p>
+            <div class="link-copy-box">
+              <input type="text" id="share-web-url" readonly value="http://localhost:8000">
+              <button class="btn btn-primary" onclick="copyInput('share-web-url')">Копировать</button>
+            </div>
+          </div>
+
+          <div class="link-card">
+            <div class="link-card-header">
+              <span class="badge">VLC / Smart TV</span>
+              <h4>Apple HLS поток (.m3u8)</h4>
+            </div>
+            <p class="link-desc">Для просмотра в VLC Player, Smart TV или в Safari на iPhone.</p>
+            <div class="link-copy-box">
+              <input type="text" id="share-hls-url" readonly value="">
+              <button class="btn btn-secondary" onclick="copyInput('share-hls-url')">Копировать</button>
+            </div>
+          </div>
+
+          <div class="link-card">
+            <div class="link-card-header">
+              <span class="badge">Низкая задержка</span>
+              <h4>HTTP-FLV поток</h4>
+            </div>
+            <p class="link-desc">Прямой видеопоток с ультранизкой задержкой (0.5 сек).</p>
+            <div class="link-copy-box">
+              <input type="text" id="share-flv-url" readonly value="">
+              <button class="btn btn-secondary" onclick="copyInput('share-flv-url')">Копировать</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Вкладка: Настройки ngrok -->
+      <div id="tab-ngrok" class="tab-pane">
+        <div class="ngrok-setup-box">
+          <div class="ngrok-status-display">
+            <h4>Статус туннеля ngrok:</h4>
+            <div id="ngrok-live-status" class="status-indicator">Проверка статуса...</div>
+            <div id="ngrok-current-url" class="active-url-box hidden"></div>
+          </div>
+
+          <div class="ngrok-form-card">
+            <h4>Привязать Auth Token ngrok</h4>
+            <p>Укажите бесплатный токен от ngrok.com для стабильного постоянного HTTPS адреса:</p>
+            <form id="form-ngrok-token" onsubmit="handleSetToken(event)">
+              <div class="token-input-row">
+                <input type="password" id="input-token-val" placeholder="Вставьте токен ngrok (например, 2N9x...)" required>
+                <button type="submit" id="btn-save-token" class="btn btn-primary">Сохранить</button>
+              </div>
+            </form>
+            <div class="token-help">
+              <span>Где взять токен?</span>
+              <a href="https://dashboard.ngrok.com/signup" target="_blank" rel="noopener">1. Бесплатная регистрация на ngrok.com</a>
+              <a href="https://dashboard.ngrok.com/get-started/your-authtoken" target="_blank" rel="noopener">2. Страница Your Authtoken</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Подвал -->
+    <footer class="app-footer">
+      <p>LOCAL TV • Фиксированные порты: RTMP 1935, HTTP 8000 • Готов к GitHub Pages</p>
+    </footer>
+  </div>
+
+  <!-- Модальное окно настройки источника потока (GitHub Pages) -->
+  <div id="modal-stream-source" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">⚙️ Источник потока (Стрим-сервер)</div>
+        <button class="modal-close-btn" onclick="closeStreamSourceModal()">&times;</button>
+      </div>
+      <form onsubmit="handleSaveStreamSource(event)">
+        <div class="modal-body">
+          <p>Укажите публичный <strong>HTTPS</strong> адрес вашего стрим-сервера для воспроизведения на GitHub Pages:</p>
+          <input type="url" id="input-stream-source" class="modal-input" placeholder="https://your-domain.ngrok-free.app" autocomplete="off">
+          <small style="color:var(--text-muted);display:block;">
+            💡 Можно использовать ngrok (<code>https://xxx.ngrok-free.app</code>) или Cloudflare Tunnel (<code>https://xxx.trycloudflare.com</code>). Браузер сохранит адрес автоматически.
+          </small>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeStreamSourceModal()">Отмена</button>
+          <button type="submit" class="btn btn-primary">Сохранить и подключиться</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Всплывающее уведомление о копировании -->
+  <div id="toast" class="toast hidden">Ссылка скопирована в буфер обмена!</div>
+
+  <!-- Библиотеки и скрипты плеера -->
+  <script src="vendor/mpegts.js"></script>
+  <script src="vendor/hls.min.js"></script>
+  <script src="config.js"></script>
+  <script src="player.js"></script>
+</body>
+</html>
